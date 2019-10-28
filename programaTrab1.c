@@ -182,10 +182,9 @@ int check_for_city(char *city, cityList *cities){
 void csv_to_bin(char *fInp, char *fOut){
   FILE *fpInp = fopen(fInp, "r");
   FILE *fpOut = fopen(fOut, "wb");
-
   if (!fpInp || !fpOut) {
-      printf("Falha no carregamento do arquivo.\n");
-      return;
+    printf("Falha no carregamento do arquivo.\n");
+    return;
   }
 
 	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
@@ -282,10 +281,9 @@ void remove_garbage(char *field, int whichField){
 
 void read_bin(char *fName){
 	FILE *fp = fopen(fName, "rb");
-
   if (!fp) {
-      printf("Falha no processamento do arquivo.\n");
-      return;
+    printf("Falha no processamento do arquivo.\n");
+    return;
   }
 
 	fseek(fp,HREGSIZE,SEEK_SET);
@@ -332,12 +330,85 @@ void read_bin(char *fName){
 	fclose(fp);
 }
 
+void search_by_field(char *fName,char *searchField,char *value){
+	FILE *fp = fopen(fName, "rb");
+  if (!fp) {
+    printf("Falha no processamento do arquivo.\n");
+    return;
+  }
+
+	fseek(fp,HREGSIZE,SEEK_SET);
+	
+	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+	char buf[VARSIZE];
+
+	int rrn = 0;
+	int print = 0;
+	int printedNum = 0;
+	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
+		remove_garbage(reg->estadoOrigem,0);
+		if(!strcmp(searchField,"estadoOrigem") && !strcmp(reg->estadoOrigem,value)){
+			print = 1;
+		}
+		
+		fread(reg->estadoDestino,DESTSIZE,1,fp);
+		remove_garbage(reg->estadoDestino,1);
+		if(!strcmp(searchField,"estadoDestino") && !strcmp(reg->estadoDestino,value)){
+			print = 1;
+		}
+		
+		fread(&(reg->distancia),DISTANCESIZE,1,fp);
+		if(!strcmp(searchField,"distancia") && reg->distancia == atoi(value)){
+			print = 1;
+		}
+		
+		fread(buf,VARSIZE,1,fp);
+
+		char *bufPtr = buf;
+		char *field = strsep(&bufPtr,"|");
+		reg->cidadeOrigem = field;
+		if(!strcmp(searchField,"cidadeOrigem") && !strcmp(reg->cidadeOrigem,value)){
+			print = 1;
+		}
+		
+		field = strsep(&bufPtr,"|");
+		reg->cidadeDestino = field;
+		if(!strcmp(searchField,"cidadeDestino") && !strcmp(reg->cidadeDestino,value)){
+			print = 1;
+		}
+		
+		field = strsep(&bufPtr,"|");
+		reg->tempoViagem = field;
+		if(!strcmp(searchField,"tempoViagem") && !strcmp(reg->tempoViagem,value)){
+			print = 1;
+		}
+		
+		if(print){
+			printf("%d ",rrn);
+			printf("%c%c ",reg->estadoOrigem[0],reg->estadoOrigem[1]);
+			printf("%c%c ",reg->estadoDestino[0],reg->estadoDestino[1]);
+			printf("%d ",reg->distancia);
+			printf("%s ",reg->cidadeOrigem);
+			printf("%s ",reg->cidadeDestino);
+			printf("%s\n",reg->tempoViagem);
+			print = 0;
+			++printedNum;
+		}
+		++rrn;
+	}
+	if(printedNum == 0){
+		printf("Registro inexistente.\n");
+	}
+  
+	fclose(fp);
+}
+
 void search_by_rrn(char *fName,int rrn) {
 	FILE *fp = fopen(fName, "rb");
 
   if (!fp) {
-      printf("Falha no processamento do arquivo.\n");
-      return;
+    printf("Falha no processamento do arquivo.\n");
+    return;
   }
 	
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
@@ -387,6 +458,8 @@ int main(){
   binarioNaTela1("caso02.bin");
 	printf("\n");
   read_bin("caso02.bin");
+	printf("\n");
+	search_by_field("caso02.bin","estadoDestino","MG");
 	printf("\n");
 	search_by_rrn("caso02.bin",3);
   return 0;
