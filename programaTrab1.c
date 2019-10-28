@@ -41,7 +41,7 @@ typedef struct cityNode {
 	struct cityNode* next;
 } cityNode;
 
-//-----Data structure for a node of a list of cities
+//-----Data structure for a list of cities
 typedef struct cityNode* cityList;
 
 /*
@@ -145,17 +145,22 @@ void scan_quote_string(char *str) {
 	}
 }
 
+cityNode *create_city_node(cityList *cities, char *city){
+	cityNode *new = (cityNode *)malloc(sizeof(cityNode));	//Allocate memory for the node
+	if(new == NULL){
+		return 0;
+	}
+	new->city = (char *)malloc(strlen(city) * sizeof(char));
+	new->city = city;
+	new->next = NULL;
+	return new;
+}
+
 int check_for_city(char *city, cityList *cities){
 	cityNode *aux = *cities;
 
 	if(aux == NULL){
-		cityNode *new = (cityNode *)malloc(sizeof(cityNode));	//Allocate memory for the node
-		if(new == NULL){
-			return 0;
-		}
-		new->city = (char *)malloc(strlen(city) * sizeof(char));
-		new->city = city;
-		new->next = NULL;
+		cityNode *new = create_city_node(cities, city);
 		*cities = new;
 		return 1;
 	}
@@ -165,13 +170,7 @@ int check_for_city(char *city, cityList *cities){
 			return 0;
 		}
 		if(aux->next == NULL){
-			cityNode *new = (cityNode *)malloc(sizeof(cityNode));	//Allocate memory for the node
-			if(new == NULL){
-				return 0;
-			}
-			new->city = (char *)malloc(strlen(city) * sizeof(char));
-			new->city = city;
-			new->next = NULL;
+			cityNode *new = create_city_node(cities,city);
 			aux->next = new;
 			return 1;
 		}
@@ -189,12 +188,21 @@ void csv_to_bin(char *fInp, char *fOut){
       return;
   }
 
+	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+	hReg->status = '0';
+	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
+	hReg->numeroVertices = 0;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fpOut);
+	hReg->numeroArestas = 0;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
+	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
+
 	int len = 0;
 	cityList *cities = (cityList *)malloc(sizeof(cityList));
 	*cities = NULL;
+
   dataReg *dReg = (dataReg *)malloc(DREGSIZE);
-	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
-	hReg->status = '0';
 
   char buf[DREGSIZE];
   int row_count = 0;
@@ -250,16 +258,15 @@ void csv_to_bin(char *fInp, char *fOut){
 		row_count++;
   }
 
-	hReg->status = '1';
-	hReg->numeroVertices = len;
-	hReg->numeroArestas = row_count - 1;
-	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
-
 	fseek(fpOut,0,SEEK_SET);
-  fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
-  fwrite(&(hReg->numeroVertices),VERTSIZE,1,fpOut);
-  fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
-  fwrite(&(hReg->dataUltimaCompactacao),LASTCOMPSIZE,1,fpOut);
+	hReg->status = '1';
+	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
+	hReg->numeroVertices = len;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fpOut);
+	hReg->numeroArestas = row_count - 1;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
+	strcpy(hReg->dataUltimaCompactacao,"##########");
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
 
   fclose(fpOut);
   fclose(fpInp);
@@ -281,6 +288,8 @@ void read_bin(char *fName){
       return;
   }
 
+	fseek(fp,HREGSIZE,SEEK_SET);
+	
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
 	char buf[VARSIZE];
 
@@ -334,7 +343,8 @@ void search_by_rrn(char *fName,int rrn) {
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
 	char buf[VARSIZE];
 
-	fseek(fp,rrn*DREGSIZE,SEEK_SET);
+	fseek(fp,HREGSIZE,SEEK_SET);
+	fseek(fp,rrn*DREGSIZE,SEEK_CUR);
 	
 	if(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
 		printf("%d ",rrn);
@@ -376,8 +386,8 @@ int main(){
   csv_to_bin("./casos-de-teste-e-binarios/caso02.csv","caso02.bin");
   binarioNaTela1("caso02.bin");
 	printf("\n");
-  //read_bin("caso02.bin");
-	//printf("\n");
-	//search_by_rrn("caso02.bin",28);
+  read_bin("caso02.bin");
+	printf("\n");
+	search_by_rrn("caso02.bin",3);
   return 0;
 }
