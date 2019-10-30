@@ -1,10 +1,8 @@
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <ctype.h>
-
-
+#include "escreverNaTela.h"
 
 /*
 * Abaixo seguem funções que fazem a escrita do binário em "stdout" (tela) pra poder ser comparado no run.codes.
@@ -19,27 +17,6 @@
 *
 * Tá tudo testado e funcionando, mas qualquer dúvida acerca dessas funções, falar com o monitor Matheus (mcarvalhor@usp.br).
 */
-
-
-
-	// Se você for incluir no .h separado, tá abaixo:
-
-	#ifndef H_ESCREVERNATELA_
-	#define H_ESCREVERNATELA_
-	#include <stdio.h>
-
-	void binarioNaTela1(char *nomeArquivoBinario);
-	void trim(char *str);
-	void scan_quote_string(char *str);
-
-	#endif
-
-	// Acabou o código que vai no .h
-
-
-
-// Abaixo vai em algum .c
-
 
 void binarioNaTela1(char *nomeArquivoBinario) {
 
