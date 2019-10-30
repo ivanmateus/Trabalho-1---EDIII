@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h> 
 
 //-----Constants for header register
 #define STATUSSIZE 1 * sizeof(char)
@@ -221,23 +222,20 @@ void csv_to_bin(char *fInp, char *fOut){
     dReg->distancia = atoi(field);
     
     field = strtok(NULL,",");
-    dReg->cidadeOrigem = (char *)malloc(sizeof(char) * strlen(field));
-		strcpy(dReg->cidadeOrigem,field);
+    dReg->cidadeOrigem = field;
 		if(check_for_city(dReg->cidadeOrigem,cities)){
 			++len;
 		}
 
     field = strtok(NULL,",");
-    dReg->cidadeDestino = (char *)malloc(sizeof(char) * strlen(field));
-		strcpy(dReg->cidadeDestino,field);
+    dReg->cidadeDestino = field;
 		if(check_for_city(dReg->cidadeDestino,cities)){
 			++len;
 		}
 
     field = strtok(NULL,",");
     trim(field);
-    dReg->tempoViagem = (char *)malloc(sizeof(char) * strlen(field));
-		strcpy(dReg->tempoViagem,field);
+    dReg->tempoViagem = field;
 
     fwrite(dReg->estadoOrigem,ORIGINSIZE,1,fpOut);
     fwrite(dReg->estadoDestino,DESTSIZE,1,fpOut);
@@ -293,34 +291,39 @@ void read_bin(char *fName){
 
 	int rrn = 0;
 	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
-		printf("%d ",rrn);
+		if(reg->estadoOrigem[0] != '*'){
+			printf("%d ",rrn);
 
-		remove_garbage(reg->estadoOrigem,0);
-		printf("%s ",reg->estadoOrigem);
-		
-		fread(reg->estadoDestino,DESTSIZE,1,fp);
-		remove_garbage(reg->estadoDestino,1);
-		printf("%s ",reg->estadoDestino);
-		
-		fread(&(reg->distancia),DISTANCESIZE,1,fp);
-		printf("%d ",reg->distancia);
-		
-		fread(buf,VARSIZE,1,fp);
+			remove_garbage(reg->estadoOrigem,0);
+			printf("%s ",reg->estadoOrigem);
+			
+			fread(reg->estadoDestino,DESTSIZE,1,fp);
+			remove_garbage(reg->estadoDestino,1);
+			printf("%s ",reg->estadoDestino);
+			
+			fread(&(reg->distancia),DISTANCESIZE,1,fp);
+			printf("%d ",reg->distancia);
+			
+			fread(buf,VARSIZE,1,fp);
 
-		char *bufPtr = buf;
-		char *field = strsep(&bufPtr,"|");
-		reg->cidadeOrigem = field;
-		printf("%s ",reg->cidadeOrigem);
-		
-		field = strsep(&bufPtr,"|");
-		reg->cidadeDestino = field;
-		printf("%s ",reg->cidadeDestino);
-		
-		field = strsep(&bufPtr,"|");
-		reg->tempoViagem = field;
-		printf("%s\n",reg->tempoViagem);
-
-		++rrn;
+			char *bufPtr = buf;
+			char *field = strsep(&bufPtr,"|");
+			reg->cidadeOrigem = field;
+			printf("%s ",reg->cidadeOrigem);
+			
+			field = strsep(&bufPtr,"|");
+			reg->cidadeDestino = field;
+			printf("%s ",reg->cidadeDestino);
+			
+			field = strsep(&bufPtr,"|");
+			reg->tempoViagem = field;
+			printf("%s\n",reg->tempoViagem);
+			++rrn;
+		} else {
+			++rrn;
+			fseek(fp,HREGSIZE,SEEK_SET);
+			fseek(fp,rrn*DREGSIZE,SEEK_CUR);
+		}
 	}
 
 	if(rrn == 0){
@@ -453,6 +456,72 @@ void search_by_rrn(char *fName,int rrn) {
   fclose(fp);
 }
 
+void remove_register(char *fName,char *searchField,char *value){
+	FILE *fp = fopen(fName, "rb+");
+  if (!fp) {
+    printf("Falha no processamento do arquivo.\n");
+    return;
+  }
+
+	fseek(fp,HREGSIZE,SEEK_SET);
+	
+	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+	char buf[VARSIZE];
+
+	int rrn = 0;
+	int remove = 0;
+	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
+		remove_garbage(reg->estadoOrigem,0);
+		if(!strcmp(searchField,"estadoOrigem") && !strcmp(reg->estadoOrigem,value)){
+			remove = 1;
+		}
+		
+		fread(reg->estadoDestino,DESTSIZE,1,fp);
+		remove_garbage(reg->estadoDestino,1);
+		if(!strcmp(searchField,"estadoDestino") && !strcmp(reg->estadoDestino,value)){
+			remove = 1;
+		}
+		
+		fread(&(reg->distancia),DISTANCESIZE,1,fp);
+		if(!strcmp(searchField,"distancia") && reg->distancia == atoi(value)){
+			remove = 1;
+		}
+		
+		fread(buf,VARSIZE,1,fp);
+
+		char *bufPtr = buf;
+		char *field = strsep(&bufPtr,"|");
+		reg->cidadeOrigem = field;
+		if(!strcmp(searchField,"cidadeOrigem") && !strcmp(reg->cidadeOrigem,value)){
+			remove = 1;
+		}
+		
+		field = strsep(&bufPtr,"|");
+		reg->cidadeDestino = field;
+		if(!strcmp(searchField,"cidadeDestino") && !strcmp(reg->cidadeDestino,value)){
+			remove = 1;
+		}
+		
+		field = strsep(&bufPtr,"|");
+		reg->tempoViagem = field;
+		if(!strcmp(searchField,"tempoViagem") && !strcmp(reg->tempoViagem,value)){
+			remove = 1;
+		}
+		
+		if(remove){
+			fseek(fp,HREGSIZE,SEEK_SET);
+			fseek(fp,rrn*DREGSIZE,SEEK_CUR);
+			fwrite("*",sizeof(char),1,fp);
+			fseek(fp,HREGSIZE,SEEK_SET);
+			fseek(fp,(rrn + 1)*DREGSIZE,SEEK_CUR);
+			remove = 0;
+		}
+		++rrn;
+	}
+  
+	fclose(fp);
+}
+
 void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	FILE *fp = fopen(fName, "rb+");
 
@@ -469,7 +538,6 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	if(!strcmp(searchField,"estadoOrigem")){
 		strcpy(reg->estadoOrigem,newValue);
 		fwrite(reg->estadoOrigem,ORIGINSIZE,1,fp);
-		printf("saiuca\n");
   	fclose(fp);
 		return;
 	}
@@ -538,18 +606,190 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
   fclose(fp);
 }
 
+void compress_bin(char *fInp, char *fOut){
+  FILE *fpInp = fopen(fInp, "r");
+  FILE *fpOut = fopen(fOut, "wb");
+  if (!fpInp || !fpOut) {
+    printf("Falha no processamento do arquivo.\n");
+    return;
+  }
+
+	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+	hReg->status = '0';
+	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
+	hReg->numeroVertices = 0;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fpOut);
+	hReg->numeroArestas = 0;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
+	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
+
+	int len = 0;
+	cityList *cities = (cityList *)malloc(sizeof(cityList));
+	*cities = NULL;
+
+	fseek(fpInp,HREGSIZE,SEEK_SET);
+	
+	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+	char buf[VARSIZE];
+  int row_count = 0;
+
+	int rrn = 0;
+	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fpInp)) {
+		if(reg->estadoOrigem[0] != '*'){
+			fread(reg->estadoDestino,DESTSIZE,1,fpInp);
+			fread(&(reg->distancia),DISTANCESIZE,1,fpInp);
+			
+			fread(buf,VARSIZE,1,fpInp);
+
+			char *bufPtr = buf;
+			char *field = strsep(&bufPtr,"|");
+			reg->cidadeOrigem = field;
+			if(check_for_city(reg->cidadeOrigem,cities)){
+				++len;
+			}
+			
+			field = strsep(&bufPtr,"|");
+			reg->cidadeDestino = field;
+			if(check_for_city(reg->cidadeOrigem,cities)){
+				++len;
+			}
+
+			field = strsep(&bufPtr,"|");
+			reg->tempoViagem = field;
+
+			fwrite(reg->estadoOrigem,ORIGINSIZE,1,fpOut);
+			fwrite(reg->estadoDestino,DESTSIZE,1,fpOut);
+			fwrite(&(reg->distancia),DISTANCESIZE,1,fpOut);
+			fwrite(reg->cidadeOrigem,sizeof(char),strlen(reg->cidadeOrigem),fpOut);
+			fwrite("|",sizeof(char),1,fpOut);
+			fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fpOut);
+			fwrite("|",sizeof(char),1,fpOut);
+			fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fpOut);
+			fwrite("|",sizeof(char),1,fpOut);
+
+			int partRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char) * strlen(reg->cidadeOrigem) + sizeof(char) * strlen(reg->cidadeDestino) + sizeof(char) * strlen(reg->tempoViagem) + 3 * sizeof(char);
+			while(partRegSize < DREGSIZE) {
+				fwrite("#",sizeof(char),1,fpOut);
+				partRegSize += sizeof(char);
+			}
+
+			++row_count;
+			++rrn;
+		} else {
+			++rrn;
+			fseek(fpInp,HREGSIZE,SEEK_SET);
+			fseek(fpInp,rrn*DREGSIZE,SEEK_CUR);
+		}
+	}
+
+	fseek(fpOut,0,SEEK_SET);
+	hReg->status = '1';
+	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
+	hReg->numeroVertices = len;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fpOut);
+	hReg->numeroArestas = row_count;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
+
+	time_t rawtime;
+  struct tm * timeinfo;
+  char date[11];
+
+  time (&rawtime);
+  timeinfo = localtime (&rawtime);
+  strftime (date,11,"%d/%m/%Y",timeinfo);
+
+	strcpy(hReg->dataUltimaCompactacao,date);
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
+
+	fclose(fpOut);
+	fclose(fpInp);
+}
+
 int main(){
-  csv_to_bin("./casos-de-teste-e-binarios/caso02.csv","caso02.bin");
-  binarioNaTela1("caso02.bin");
-	printf("\n");
-  read_bin("caso02.bin");
-	printf("\n");
-	search_by_field("caso02.bin","estadoDestino","MG");
-	printf("\nANTES\n");
-	search_by_rrn("caso02.bin",3);
-	printf("\n");
-	update_register("cidadeOrigem","LIMEIRA","caso02.bin",3);
-	printf("DEPOIS\n");
-	search_by_rrn("caso02.bin",3);
+
+	int option = -1;
+	scanf("%d ",&option);
+	char arqInp[50];
+	char arqOut[50];
+	char field[15];
+	char value[VARSIZE];
+	int rrn = -1;
+	int n = -1;
+
+	switch (option)	{
+		case 1:
+			scanf("%s %s",arqInp,arqOut);
+			csv_to_bin(arqInp,arqOut);
+			binarioNaTela1(arqOut);
+			break;
+		
+		case 2:
+			scanf("%s",arqOut);
+			read_bin(arqOut);
+			break;
+
+		case 3:
+			scanf("%s %s ",arqOut,field);
+			if(!strcmp(field,"distancia")){
+				scanf("%s",value);
+				search_by_field(arqOut,field,value);
+			} else {
+				scan_quote_string(value);
+				search_by_field(arqOut,field,value);
+			}
+			break;
+
+		case 4:
+			scanf("%s %d",arqOut,&rrn);
+			search_by_rrn(arqOut,rrn);
+			break;
+
+		case 5:
+			scanf("%s %d",arqOut,&n);
+			for(int i = 0; i < n; ++i){
+				scanf("%s ",field);
+				if(!strcmp(field,"distancia")){
+					scanf("%s",value);
+					remove_register(arqOut,field,value);
+				} else {
+					scan_quote_string(value);
+					remove_register(arqOut,field,value);
+				}
+			}
+			read_bin(arqOut);
+			break;
+
+		case 6:
+			//INSERÇÃO
+			break;
+
+		case 7:
+			scanf("%s %d",arqOut,&n);
+			for(int i = 0; i < n; ++i){
+				scanf("%d %s ",&rrn,field);
+				if(!strcmp(field,"distancia")){
+					scanf("%s",value);
+					update_register(field,value,arqOut,rrn);
+				} else {
+					scan_quote_string(value);
+					update_register(field,value,arqOut,rrn);
+				}
+			}
+			read_bin(arqOut);
+			break;
+
+		case 8:
+			scanf("%s %s",arqInp,arqOut);
+			compress_bin(arqInp,arqOut);
+			binarioNaTela1(arqOut);
+			break;
+
+		default:
+			printf("Opção não encontrada.\n");
+			break;
+	}
+
+	//update_register("cidadeOrigem","LIMEIRA","caso02.bin",3);
   return 0;
 }
