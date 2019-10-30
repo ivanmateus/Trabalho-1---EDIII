@@ -69,7 +69,7 @@ void csv_to_bin(char *fInp, char *fOut){
 	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
 
-	//Create the list for the cities in the file, where
+	//Create a list for the cities in the file, where
 	//the variable 'len' stores the size of the list
 	int len = 0;
 	cityList *cities = (cityList *)malloc(sizeof(cityList));
@@ -537,7 +537,7 @@ void remove_register(char *fName,char *searchField,char *value){
 			fwrite("*",sizeof(char),1,fp);
 		
 			//Go to the next register
-			fseek(fp,HREGSIZE+(rrn+1)*DREGSIZE,SEEK_SET);
+			fseek(fp,DREGSIZE-1,SEEK_CUR);
 
 			//Clear the flag to use it again
 			remove = 0;
@@ -556,23 +556,41 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
     		return;
   	}
 
+	//Variable to store the RRN of the current register
 	int rrn = 0;
+
+	//Create a list to store the cities that are in the file
+	//and the variable 'len' stores the length of the list
 	int len = 0;
 	cityList *cities = (cityList *)malloc(sizeof(cityList));
 	*cities = NULL;
 
+	//Create a register to store the data of the register to be inserted
  	dataReg *dReg = (dataReg *)malloc(DREGSIZE);
+
+	//Create an auxiliary register to run through the file in order
+	//to build the list of cities. This is necessary because the cities
+	//in the new register have to be checked whether they're not in
+	//the list already or not.
 	dataReg *aux = (dataReg*)malloc(DREGSIZE);
+	
+	//Create a header register to update its values in the .bin file
 	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+
+	//Create a buffer to store the variable size part of the register
 	char buf[VARSIZE];
+	
+	//Variable to count the number of registers in the file
 	int row_count = 0;
 
+	//Write a status '0' to symbolize that a writing will be done
 	hReg->status = '0';
 	fwrite(&(hReg->status),STATUSSIZE,1,fp);
 	fread(&(hReg->numeroVertices),VERTSIZE,1,fp);
 	fread(&(hReg->numeroArestas),EDGESIZE,1,fp);
 	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
+	//Pass the new values to the created register
     	strcpy(dReg->estadoOrigem,estadoOrigem);
 	strcpy(dReg->estadoDestino,estadoDestino);
 	dReg->distancia = distancia;
@@ -580,7 +598,10 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
     	dReg->cidadeDestino = cidadeDestino;
     	dReg->tempoViagem = tempoViagem;
 
+	//While there are registers to be read, continue
 	while(fread(aux->estadoOrigem,ORIGINSIZE,1,fp)) {
+		//If the register hasn't been removed, continue
+		//Else, go to the next register with fseek
 		if(aux->estadoOrigem[0] != '*'){
 			fread(aux->estadoDestino,DESTSIZE,1,fp);
 			fread(&(aux->distancia),DISTANCESIZE,1,fp);
@@ -590,12 +611,18 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 			char *bufPtr = buf;
 			char *field = strsep(&bufPtr,"|");
 			aux->cidadeOrigem = field;
+		
+			//If the city isn't in the list, insert it
+			//and increment its length
 			if(check_for_city(aux->cidadeOrigem,cities)){
 				++len;
 			}
 			
 			field = strsep(&bufPtr,"|");
 			aux->cidadeDestino = field;
+	
+			//If the city isn't in the list, insert it
+			//and increment its length
 			if(check_for_city(aux->cidadeDestino,cities)){
 				++len;
 			}
@@ -607,10 +634,11 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 			++rrn;
 		} else {
 			++rrn;
-			fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
+			fseek(fp,rrn*DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
 	}
 	
+	//Check if the new cities are in the list
 	if(check_for_city(dReg->cidadeOrigem,cities)){
 		++len;
 	}
@@ -618,7 +646,7 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 		++len;
 	}
 
-
+	//Write the register in the file
     	fwrite(dReg->estadoOrigem,ORIGINSIZE,1,fp);
 	fwrite(dReg->estadoDestino,DESTSIZE,1,fp);
 	fwrite(&(dReg->distancia),DISTANCESIZE,1,fp);
@@ -629,13 +657,17 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
     	fwrite(dReg->tempoViagem,sizeof(char),strlen(dReg->tempoViagem),fp);
    	fwrite("|",sizeof(char),1,fp);
 		
+	//Complete the rest of the register with the garbage character '#'
 	int partRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char) * strlen(dReg->cidadeOrigem) + sizeof(char) * strlen(dReg->cidadeDestino) + sizeof(char) * strlen(dReg->tempoViagem) + 3 * sizeof(char);
 	while(partRegSize < DREGSIZE) {
 		fwrite("#",sizeof(char),1,fp);
 		partRegSize += sizeof(char);
 	}
 
+	//Go back to the beginning of the file
 	fseek(fp,0,SEEK_SET);
+
+	//And write the new values of the header register
 	hReg->status = '1';
 	fwrite(&(hReg->status),STATUSSIZE,1,fp);
 	hReg->numeroVertices = len;
@@ -647,6 +679,7 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 	fclose(fp);
 }
 
+//Update a field of a register with a given RRN
 void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	FILE *fp = fopen(fName, "rb+");
 
@@ -655,25 +688,37 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 		return;
 	}
 	
+	//Create a register that will substitute the old one
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+
+	//Create a buffer to store the variable size part of the register
 	char buf[VARSIZE];
 
+	//Go to the register
 	fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
 	
+	//If the field to be updated is "estadoOrigem"
 	if(!strcmp(searchField,"estadoOrigem")){
+		//Simply write the new value
 		strcpy(reg->estadoOrigem,newValue);
 		fwrite(reg->estadoOrigem,ORIGINSIZE,1,fp);
   	fclose(fp);
 		return;
 	}
+	
+	//If the field to be updated is "estadoDestino"
 	if(!strcmp(searchField,"estadoDestino")){
+		//Go to the first byte of this field and write the new value
 		fseek(fp,ORIGINSIZE,SEEK_CUR);
 		strcpy(reg->estadoDestino,newValue);
 		fwrite(reg->estadoDestino,DESTSIZE,1,fp);
 		fclose(fp);
 		return;
-	}	
+	}
+
+	//If the field to be updated is "distancia"
 	if(!strcmp(searchField,"distancia")){
+		//Go to the first byte of this field and write the new value
 		fseek(fp,ORIGINSIZE+DESTSIZE,SEEK_CUR);
 		reg->distancia = atoi(newValue);
 		fwrite(&(reg->distancia),DISTANCESIZE,1,fp);
@@ -681,9 +726,14 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 		return;
 	}
 	
+	//If the field isn't none of these, go to the first byte
+	//of the variable size part of the register
 	fseek(fp,ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_CUR);
+	
+	//Read this part
 	fread(buf,VARSIZE,1,fp);
 
+	//Get the fields
 	char *bufPtr = buf;
 	char *field = strsep(&bufPtr,"|");
 	reg->cidadeOrigem = field;
@@ -694,11 +744,15 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	field = strsep(&bufPtr,"|");
 	reg->tempoViagem = field;
 	
+	//Calculate the size of the register before the insertion of the new value
 	int oldPartRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
 
-	fseek(fp,HREGSIZE+rrn*DREGSIZE+ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_SET);
-
+	//Go back to the first byte of the variable size part
+	fseek(fp,rrn*DREGSIZE-VARSIZE,SEEK_SET);
+	
+	//If the field to be updated is "estadoOrigem"
 	if(!strcmp(searchField,"cidadeOrigem")){
+		//Write the new value and rewrite the next three fields with the delimiters
 		reg->cidadeOrigem = newValue;
 		fwrite(reg->cidadeOrigem,sizeof(char),strlen(reg->cidadeOrigem),fp);
 		fwrite("|",sizeof(char),1,fp);
@@ -707,7 +761,11 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
 		fwrite("|",sizeof(char),1,fp);
 	}
+	
+	//If the field to be updated is "estadoOrigem"
 	if(!strcmp(searchField,"cidadeDestino")){
+		//Go to the first byte of the next field, write the new value
+		//and rewrite the next two fields, all this with the delimiters
 		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char),SEEK_CUR);
 		reg->cidadeDestino = newValue;
 		fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
@@ -715,13 +773,20 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
 		fwrite("|",sizeof(char),1,fp);
 	}
+	
+	//If the field to be updated is "estadoOrigem"
 	if(!strcmp(searchField,"tempoViagem")){
+		//Go to the first byte of the lat field and
+		//write the new value with the delimiter
 		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char)+(sizeof(char)*strlen(reg->cidadeDestino))+sizeof(char),SEEK_CUR);
 		reg->tempoViagem = newValue;
 		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
 		fwrite("|",sizeof(char),1,fp);
 	}
-		
+	
+	//Calculate the new size occupied by th register. If this new value is
+	//less than the old value, it means that there are some bytes without
+	//the garbage character '#', so overwrite those bytes
 	int newPartRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
 	while(newPartRegSize < oldPartRegSize && newPartRegSize < DREGSIZE) {
 		fwrite("#",sizeof(char),1,fp);
@@ -731,14 +796,23 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	fclose(fp);
 }
 
+//Compress an input file with statically removed files
+//into a new file
 void compress_bin(char *fInp, char *fOut){
 	FILE *fpInp = fopen(fInp, "r");
 	FILE *fpOut = fopen(fOut, "wb");
 	if (!fpInp || !fpOut) {
-	printf("Falha no processamento do arquivo.\n");
-	return;
+		printf("Falha no processamento do arquivo.\n");
+		return;
 	}
 
+	//Allocate memory for the header register and set
+	//its initial values (just like in the 'csv_to_bin' function):
+	//status: '0' (the file has been opened for writing)
+	//numeroVertices: 0 (the file doesn't have any vertices; i.e. cities)
+	//numeroArestas: 0 (the file doesn't have any edges; i.e. data about two cities)
+	//dataUltimaCompactacao: "00/00/0000" (the file has been first opened)
+	//and write them in the beginning of the file
 	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
 	hReg->status = '0';
 	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
@@ -749,19 +823,32 @@ void compress_bin(char *fInp, char *fOut){
 	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
 
+	//Create a list for the cities in the file, with the 'len' variable
+	//to store its length
 	int len = 0;
 	cityList *cities = (cityList *)malloc(sizeof(cityList));
 	*cities = NULL;
 
-	fseek(fpInp,HREGSIZE,SEEK_SET);
-	
+	//Create an auxiliary register to copy the registers
+	//from a file to another
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+	
+	//Create a buffer to store the variable size part of the register
 	char buf[VARSIZE];
+
+	//Variable to count the number of registers (or edges)
 	int row_count = 0;
 
+	//Variable to store the RRN of the current register
 	int rrn = 0;
+
+	//While there are registers to be read, continue
 	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fpInp)) {
+		//If the register hasn't been deleted,
+		//copy it to the new file
+		//Else, go to the next one
 		if(reg->estadoOrigem[0] != '*'){
+			//Read the values from the input file
 			fread(reg->estadoDestino,DESTSIZE,1,fpInp);
 			fread(&(reg->distancia),DISTANCESIZE,1,fpInp);
 			
@@ -770,12 +857,17 @@ void compress_bin(char *fInp, char *fOut){
 			char *bufPtr = buf;
 			char *field = strsep(&bufPtr,"|");
 			reg->cidadeOrigem = field;
+			
+			//If the city isn't in the list yet,
+			//add it and increment the length of the list
 			if(check_for_city(reg->cidadeOrigem,cities)){
 				++len;
 			}
 			
 			field = strsep(&bufPtr,"|");
 			reg->cidadeDestino = field;
+			//If the city isn't in the list yet,
+			//add it and increment the length of the list
 			if(check_for_city(reg->cidadeOrigem,cities)){
 				++len;
 			}
@@ -783,6 +875,7 @@ void compress_bin(char *fInp, char *fOut){
 			field = strsep(&bufPtr,"|");
 			reg->tempoViagem = field;
 
+			//Write the values in the new file
 			fwrite(reg->estadoOrigem,ORIGINSIZE,1,fpOut);
 			fwrite(reg->estadoDestino,DESTSIZE,1,fpOut);
 			fwrite(&(reg->distancia),DISTANCESIZE,1,fpOut);
@@ -793,6 +886,8 @@ void compress_bin(char *fInp, char *fOut){
 			fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fpOut);
 			fwrite("|",sizeof(char),1,fpOut);
 
+			//Calculate the size occupied by the register and
+			//complete the remaining part with the garbage character '#'
 			int partRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char) * strlen(reg->cidadeOrigem) + sizeof(char) * strlen(reg->cidadeDestino) + sizeof(char) * strlen(reg->tempoViagem) + 3 * sizeof(char);
 			while(partRegSize < DREGSIZE) {
 				fwrite("#",sizeof(char),1,fpOut);
@@ -803,10 +898,11 @@ void compress_bin(char *fInp, char *fOut){
 			++rrn;
 		} else {
 			++rrn;
-			fseek(fpInp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
+			fseek(fpInp,rrn*DREGSIZE-ORIGINSIZE,SEEK_SET);
 		}
 	}
 
+	//Go back to the beginning and write the new values for the header register
 	fseek(fpOut,0,SEEK_SET);
 	hReg->status = '1';
 	fwrite(&(hReg->status),STATUSSIZE,1,fpOut);
@@ -815,6 +911,7 @@ void compress_bin(char *fInp, char *fOut){
 	hReg->numeroArestas = row_count;
 	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
 
+	//Get the current dateand put it in the "dd/mm/yyyy" format
 	time_t rawtime;
 	struct tm * timeinfo;
 	char date[11];
@@ -823,6 +920,7 @@ void compress_bin(char *fInp, char *fOut){
 	timeinfo = localtime (&rawtime);
 	strftime (date,11,"%d/%m/%Y",timeinfo);
 
+	//Write the new value for the date
 	strcpy(hReg->dataUltimaCompactacao,date);
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
 
@@ -928,7 +1026,5 @@ int main(){
 			printf("Opção não encontrada.\n");
 			break;
 	}
-
-	//update_register("cidadeOrigem","LIMEIRA","caso02.bin",3);
   return 0;
 }
