@@ -453,6 +453,91 @@ void search_by_rrn(char *fName,int rrn) {
   fclose(fp);
 }
 
+void update_register(char *searchField, char *newValue, char *fName, int rrn){
+	FILE *fp = fopen(fName, "rb+");
+
+  if (!fp) {
+    printf("Falha no processamento do arquivo.\n");
+    return;
+  }
+	
+	dataReg *reg = (dataReg *)malloc(DREGSIZE);
+	char buf[VARSIZE];
+
+	fseek(fp,HREGSIZE,SEEK_SET);
+	fseek(fp,rrn*DREGSIZE,SEEK_CUR);
+	if(!strcmp(searchField,"estadoOrigem")){
+		strcpy(reg->estadoOrigem,newValue);
+		fwrite(reg->estadoOrigem,ORIGINSIZE,1,fp);
+		printf("saiuca\n");
+  	fclose(fp);
+		return;
+	}
+	if(!strcmp(searchField,"estadoDestino")){
+		fseek(fp,ORIGINSIZE,SEEK_CUR);
+		strcpy(reg->estadoDestino,newValue);
+		fwrite(reg->estadoDestino,DESTSIZE,1,fp);
+		fclose(fp);
+		return;
+	}	
+	if(!strcmp(searchField,"distancia")){
+		fseek(fp,ORIGINSIZE+DESTSIZE,SEEK_CUR);
+		reg->distancia = atoi(newValue);
+		fwrite(&(reg->distancia),DISTANCESIZE,1,fp);
+		fclose(fp);
+		return;
+	}
+	
+	fseek(fp,ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_CUR);
+	fread(buf,VARSIZE,1,fp);
+
+	char *bufPtr = buf;
+	char *field = strsep(&bufPtr,"|");
+	reg->cidadeOrigem = field;
+	
+	field = strsep(&bufPtr,"|");
+	reg->cidadeDestino = field;
+		
+	field = strsep(&bufPtr,"|");
+	reg->tempoViagem = field;
+
+	fseek(fp,HREGSIZE,SEEK_SET);
+	fseek(fp,rrn*DREGSIZE,SEEK_CUR);
+	fseek(fp,ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_CUR);
+
+	if(!strcmp(searchField,"cidadeOrigem")){
+		reg->cidadeOrigem = newValue;
+		fwrite(reg->cidadeOrigem,sizeof(char),strlen(reg->cidadeOrigem),fp);
+		fwrite("|",sizeof(char),1,fp);
+		fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
+		fwrite("|",sizeof(char),1,fp);
+		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+		fwrite("|",sizeof(char),1,fp);
+	}
+	if(!strcmp(searchField,"cidadeDestino")){
+		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char),SEEK_CUR);
+		reg->cidadeDestino = newValue;
+		fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
+		fwrite("|",sizeof(char),1,fp);
+		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+		fwrite("|",sizeof(char),1,fp);
+	}
+	if(!strcmp(searchField,"tempoViagem")){
+		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char)+(sizeof(char)*strlen(reg->cidadeDestino))+sizeof(char),SEEK_CUR);
+		reg->tempoViagem = newValue;
+		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+		fwrite("|",sizeof(char),1,fp);
+	}
+		
+	int partRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
+	while(partRegSize < DREGSIZE) {
+		fwrite("#",sizeof(char),1,fp);
+		partRegSize += sizeof(char);
+	}
+
+  fclose(fp);
+}
+
 int main(){
   csv_to_bin("./casos-de-teste-e-binarios/caso02.csv","caso02.bin");
   binarioNaTela1("caso02.bin");
@@ -460,7 +545,11 @@ int main(){
   read_bin("caso02.bin");
 	printf("\n");
 	search_by_field("caso02.bin","estadoDestino","MG");
+	printf("\nANTES\n");
+	search_by_rrn("caso02.bin",3);
 	printf("\n");
+	update_register("cidadeOrigem","LIMEIRA","caso02.bin",3);
+	printf("DEPOIS\n");
 	search_by_rrn("caso02.bin",3);
   return 0;
 }
