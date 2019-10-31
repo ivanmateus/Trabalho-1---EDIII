@@ -2,6 +2,7 @@
 //Gabriel de Andrade Dezan - 10525706
 //Ivan Mateus de Lima Azevedo - 10525602
 
+//-----Include the libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,13 +90,13 @@ void csv_to_bin(char *fInp, char *fOut){
 
 	//While there are lines to be read, continue
 	while(fgets(buf, DREGSIZE, fpInp)) {
-	    	//If it's the first line, it means that it is
+	  //If it's the first line, it means that it is
 		//the line with the name of the fields, so
 		//it is skipped
 		if (row_count == 0) {
-	     		row_count++;
-	      		continue;
-	    	}
+	  	row_count++;
+	  	continue;
+	  }
 
 		//Get the first token (the value for the field "estadoOrigem")
 		char *field = strtok(buf,",");
@@ -109,7 +110,7 @@ void csv_to_bin(char *fInp, char *fOut){
 		field = strtok(NULL,",");
 		dReg->distancia = atoi(field);
 
-    		//Get the next token (the value for the field "distancia")
+    //Get the next token (the value for the field "distancia")
 		field = strtok(NULL,",");
 		dReg->cidadeOrigem = field;
 		
@@ -142,7 +143,7 @@ void csv_to_bin(char *fInp, char *fOut){
 		fwrite(dReg->cidadeDestino,sizeof(char),strlen(dReg->cidadeDestino),fpOut);
 		fwrite("|",sizeof(char),1,fpOut);
 		fwrite(dReg->tempoViagem,sizeof(char),strlen(dReg->tempoViagem),fpOut);
-   		fwrite("|",sizeof(char),1,fpOut);
+   	fwrite("|",sizeof(char),1,fpOut);
 		
 		//Calculate the amount of space occupied inside the register
 		//and complete the register with the garbage character '#'
@@ -193,9 +194,9 @@ void remove_garbage(char *field, int whichField){
 void read_bin(char *fName){
 	FILE *fp = fopen(fName, "rb");
 	if (!fp) {
-  		printf("Falha no processamento do arquivo.\n");
-   		return;
-  	}
+  	printf("Falha no processamento do arquivo.\n");
+   	return;
+  }
 
 	//Skip the header register
 	fseek(fp,HREGSIZE,SEEK_SET);
@@ -252,7 +253,7 @@ void read_bin(char *fName){
 			++rrn;
 		} else {
 			++rrn;
-			fseek(fp,rrn*DREGSIZE-ORIGINSIZE,SEEK_CUR);
+			fseek(fp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
 	}
 
@@ -270,8 +271,8 @@ void search_by_field(char *fName,char *searchField,char *value){
 	FILE *fp = fopen(fName, "rb");
 	if (!fp) {
 		printf("Falha no processamento do arquivo.\n");
-    		return;
-  	}
+    return;
+  }
 
 	//Skip the header register
 	fseek(fp,HREGSIZE,SEEK_SET);
@@ -454,8 +455,8 @@ void remove_register(char *fName,char *searchField,char *value){
 	FILE *fp = fopen(fName, "rb+");
 	if (!fp) {
 		printf("Falha no processamento do arquivo.\n");
-    		return;
-  	}
+    return;
+  }
 
 	//Skip the header register
 	fseek(fp,HREGSIZE,SEEK_SET);
@@ -552,9 +553,9 @@ void remove_register(char *fName,char *searchField,char *value){
 void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int distancia, char *cidadeOrigem, char *cidadeDestino, char *tempoViagem){
 	FILE *fp = fopen(fName, "rb+");
  	if (!fp) {
-    		printf("Falha no carregamento do arquivo.\n");
-    		return;
-  	}
+    printf("Falha no carregamento do arquivo.\n");
+    return;
+  }
 
 	//Variable to store the RRN of the current register
 	int rrn = 0;
@@ -591,12 +592,12 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
 	//Pass the new values to the created register
-    	strcpy(dReg->estadoOrigem,estadoOrigem);
+  strcpy(dReg->estadoOrigem,estadoOrigem);
 	strcpy(dReg->estadoDestino,estadoDestino);
 	dReg->distancia = distancia;
 	dReg->cidadeOrigem = cidadeOrigem;
-    	dReg->cidadeDestino = cidadeDestino;
-    	dReg->tempoViagem = tempoViagem;
+  dReg->cidadeDestino = cidadeDestino;
+  dReg->tempoViagem = tempoViagem;
 
 	//While there are registers to be read, continue
 	while(fread(aux->estadoOrigem,ORIGINSIZE,1,fp)) {
@@ -634,7 +635,7 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 			++rrn;
 		} else {
 			++rrn;
-			fseek(fp,rrn*DREGSIZE-ORIGINSIZE,SEEK_CUR);
+			fseek(fp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
 	}
 	
@@ -647,15 +648,15 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 	}
 
 	//Write the register in the file
-    	fwrite(dReg->estadoOrigem,ORIGINSIZE,1,fp);
+  fwrite(dReg->estadoOrigem,ORIGINSIZE,1,fp);
 	fwrite(dReg->estadoDestino,DESTSIZE,1,fp);
 	fwrite(&(dReg->distancia),DISTANCESIZE,1,fp);
 	fwrite(dReg->cidadeOrigem,sizeof(char),strlen(dReg->cidadeOrigem),fp);
-    	fwrite("|",sizeof(char),1,fp);
-    	fwrite(dReg->cidadeDestino,sizeof(char),strlen(dReg->cidadeDestino),fp);
-    	fwrite("|",sizeof(char),1,fp);
-    	fwrite(dReg->tempoViagem,sizeof(char),strlen(dReg->tempoViagem),fp);
-   	fwrite("|",sizeof(char),1,fp);
+  fwrite("|",sizeof(char),1,fp);
+  fwrite(dReg->cidadeDestino,sizeof(char),strlen(dReg->cidadeDestino),fp);
+  fwrite("|",sizeof(char),1,fp);
+  fwrite(dReg->tempoViagem,sizeof(char),strlen(dReg->tempoViagem),fp);
+  fwrite("|",sizeof(char),1,fp);
 		
 	//Complete the rest of the register with the garbage character '#'
 	int partRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char) * strlen(dReg->cidadeOrigem) + sizeof(char) * strlen(dReg->cidadeDestino) + sizeof(char) * strlen(dReg->tempoViagem) + 3 * sizeof(char);
@@ -748,7 +749,7 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	int oldPartRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
 
 	//Go back to the first byte of the variable size part
-	fseek(fp,rrn*DREGSIZE-VARSIZE,SEEK_SET);
+	fseek(fp,HREGSIZE+rrn*DREGSIZE+ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_SET);
 	
 	//If the field to be updated is "estadoOrigem"
 	if(!strcmp(searchField,"cidadeOrigem")){
@@ -799,7 +800,7 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 //Compress an input file with statically removed files
 //into a new file
 void compress_bin(char *fInp, char *fOut){
-	FILE *fpInp = fopen(fInp, "r");
+	FILE *fpInp = fopen(fInp, "rb");
 	FILE *fpOut = fopen(fOut, "wb");
 	if (!fpInp || !fpOut) {
 		printf("Falha no processamento do arquivo.\n");
@@ -822,6 +823,9 @@ void compress_bin(char *fInp, char *fOut){
 	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
 	strcpy(hReg->dataUltimaCompactacao,"00/00/0000");
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
+
+	//Skip the header register in the input file
+	fseek(fpInp,HREGSIZE,SEEK_SET);
 
 	//Create a list for the cities in the file, with the 'len' variable
 	//to store its length
@@ -868,10 +872,10 @@ void compress_bin(char *fInp, char *fOut){
 			reg->cidadeDestino = field;
 			//If the city isn't in the list yet,
 			//add it and increment the length of the list
-			if(check_for_city(reg->cidadeOrigem,cities)){
+			if(check_for_city(reg->cidadeDestino,cities)){
 				++len;
 			}
-
+			
 			field = strsep(&bufPtr,"|");
 			reg->tempoViagem = field;
 
@@ -898,7 +902,7 @@ void compress_bin(char *fInp, char *fOut){
 			++rrn;
 		} else {
 			++rrn;
-			fseek(fpInp,rrn*DREGSIZE-ORIGINSIZE,SEEK_SET);
+			fseek(fpInp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
 	}
 
