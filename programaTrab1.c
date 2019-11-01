@@ -11,6 +11,9 @@
 #include "./src/escreverNaTela.h"
 #include "./src/cityList.h"
 
+//-----Constant for default last compression date
+#define LASTCOMPDATE "01/11/2019"
+
 //-----Constants for header register
 #define STATUSSIZE 1 * sizeof(char)
 #define VERTSIZE 1 * sizeof(int)
@@ -45,12 +48,12 @@ typedef struct {
 
 //Read the .csv file and 
 //build the .bin with the retrieved data
-void csv_to_bin(char *fInp, char *fOut){
+int csv_to_bin(char *fInp, char *fOut){
 	FILE *fpInp = fopen(fInp, "r");
 	FILE *fpOut = fopen(fOut, "wb");
 	if (!fpInp || !fpOut) {
 		printf("Falha no carregamento do arquivo.\n");
-		return;
+		return 0;
 	}
 
 	//Allocate memory for the header register, set
@@ -90,7 +93,7 @@ void csv_to_bin(char *fInp, char *fOut){
 
 	//While there are lines to be read, continue
 	while(fgets(buf, DREGSIZE, fpInp)) {
-	  //If it's the first line, it means that it is
+		//If it's the first line, it means that it is
 		//the line with the name of the fields, so
 		//it is skipped
 		if (row_count == 0) {
@@ -175,6 +178,7 @@ void csv_to_bin(char *fInp, char *fOut){
 
 	fclose(fpOut);
 	fclose(fpInp);
+	return 1;
 }
 
 //Put a null terminator character in the end of the
@@ -199,7 +203,14 @@ void read_bin(char *fName){
   }
 
 	//Skip the header register
-	fseek(fp,HREGSIZE,SEEK_SET);
+	
+	//fseek(fp,HREGSIZE,SEEK_SET);
+
+	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+	fread(&(hReg->status),STATUSSIZE,1,fp);
+	fread(&(hReg->numeroVertices),VERTSIZE,1,fp);
+	fread(&(hReg->numeroArestas),EDGESIZE,1,fp);
+	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
 	//Create an auxiliary register to temporarily store the data
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
@@ -212,14 +223,22 @@ void read_bin(char *fName){
 	//Variable to store the RRN of the current register
 	int rrn = 0;
 
+	//Variable to check if some register was read
+	int read = 0;
+
 	//While there are registers to be read
 	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
-		//If the register hasn't been removed (situation
+		//If there's a '\n' character in the beginning of the
+		//register, the file is not well built
+		//Else, if the register hasn't been removed (situation
 		//where the first character of the register is '*'),
 		//then read print its data
 		//Else, calculate the next RRN (++rrn) and
 		//go to its memory position using fseek
-		if(reg->estadoOrigem[0] != '*'){
+		if(reg->estadoOrigem[0] == '\n'){
+			printf("Falha no processamento do arquivo.\n");
+			return;				
+		} else if(reg->estadoOrigem[0] != '*'){
 			//Read and print the fixed size fields
 			printf("%d ",rrn);
 
@@ -251,14 +270,17 @@ void read_bin(char *fName){
 			
 			//Go to the next RRN
 			++rrn;
-		} else {
+
+			//Set the 'read' flag
+			read = 1;
+		}else {
 			++rrn;
 			fseek(fp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
 	}
 
 	//If the RRN is still zero, it means that there aren't any registers
-	if(rrn == 0){
+	if(rrn == 0 || !read){
 		printf("Registro inexistente.\n");
 	}
 
@@ -451,16 +473,22 @@ void search_by_rrn(char *fName,int rrn) {
 }
 
 //Remove the registers that satisfy a given condition
-void remove_register(char *fName,char *searchField,char *value){
+int remove_register(char *fName,char *searchField,char *value){
 	FILE *fp = fopen(fName, "rb+");
 	if (!fp) {
 		printf("Falha no processamento do arquivo.\n");
-    return;
+    return 0;
   }
 
-	//Skip the header register
-	fseek(fp,HREGSIZE,SEEK_SET);
-	
+	//Get the values of the header register
+	//and write status '0' to start the modifications
+	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+	hReg->status = '0';
+	fwrite(&(hReg->status),STATUSSIZE,1,fp);
+	fread(&(hReg->numeroVertices),VERTSIZE,1,fp);
+	fread(&(hReg->numeroArestas),EDGESIZE,1,fp);
+	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
+
 	//Create a register to temporarily store the retrieved data
 	dataReg *reg = (dataReg *)malloc(DREGSIZE);
 
@@ -474,87 +502,130 @@ void remove_register(char *fName,char *searchField,char *value){
 	//Flag to determine if the current register has to be removed or not
 	int remove = 0;
 
+	//Flag to determine the number of removed
+	int removed = 0;
+
+	//Create a list to store the cities that are in the file
+	//and the variable 'len' stores the length of the list
+	int len = 0;
+	cityList *cities = (cityList *)malloc(sizeof(cityList));
+	*cities = NULL;
+
 	//While there are registers to be read, continue
 	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
-		//Same logic applied to the 'search_by_field' function 
-		remove_garbage(reg->estadoOrigem,0);
+		//If there's a '\n' character in the beginning of the
+		//register, the file is not well built
+		//Else, if the register hasn't been removed yet, continue
+		//Else, go to the next register
+		if(reg->estadoOrigem[0] == '\n'){
+			printf("Falha no processamento do arquivo.\n");
+			return 0;
+		} else if(reg->estadoOrigem[0] != '*') {
+			//Same logic applied to the 'search_by_field' function 
+			remove_garbage(reg->estadoOrigem,0);
 
-		//If the condition is matched, set the 'remove' flag
-		if(!strcmp(searchField,"estadoOrigem") && !strcmp(reg->estadoOrigem,value)){
-			remove = 1;
-		}
-		
-		//Same logic applied to the 'search_by_field' function
-		fread(reg->estadoDestino,DESTSIZE,1,fp);
+			//If the condition is matched, set the 'remove' flag
+			if(!strcmp(searchField,"estadoOrigem") && !strcmp(reg->estadoOrigem,value)){
+				remove = 1;
+			}
+			
+			//Same logic applied to the 'search_by_field' function
+			fread(reg->estadoDestino,DESTSIZE,1,fp);
 
-		//If the condition is matched, set the 'remove' flag
-		remove_garbage(reg->estadoDestino,1);
-		if(!strcmp(searchField,"estadoDestino") && !strcmp(reg->estadoDestino,value)){
-			remove = 1;
-		}
-		
-		fread(&(reg->distancia),DISTANCESIZE,1,fp);
-		
-		//If the condition is matched, set the 'remove' flag
-		if(!strcmp(searchField,"distancia") && reg->distancia == atoi(value)){
-			remove = 1;
-		}
-		
-		fread(buf,VARSIZE,1,fp);
+			//If the condition is matched, set the 'remove' flag
+			remove_garbage(reg->estadoDestino,1);
+			if(!strcmp(searchField,"estadoDestino") && !strcmp(reg->estadoDestino,value)){
+				remove = 1;
+			}
+			
+			fread(&(reg->distancia),DISTANCESIZE,1,fp);
+			
+			//If the condition is matched, set the 'remove' flag
+			if(!strcmp(searchField,"distancia") && reg->distancia == atoi(value)){
+				remove = 1;
+			}
+			
+			fread(buf,VARSIZE,1,fp);
 
-		char *bufPtr = buf;
-		char *field = strsep(&bufPtr,"|");
-		reg->cidadeOrigem = field;
-		
-		//If the condition is matched, set the 'remove' flag
-		if(!strcmp(searchField,"cidadeOrigem") && !strcmp(reg->cidadeOrigem,value)){
-			remove = 1;
-		}
-		
-		field = strsep(&bufPtr,"|");
-		reg->cidadeDestino = field;
-		
-		//If the condition is matched, set the 'remove' flag
-		if(!strcmp(searchField,"cidadeDestino") && !strcmp(reg->cidadeDestino,value)){
-			remove = 1;
-		}
-		
-		field = strsep(&bufPtr,"|");
-		reg->tempoViagem = field;
-		
-		//If the condition is matched, set the 'remove' flag
-		if(!strcmp(searchField,"tempoViagem") && !strcmp(reg->tempoViagem,value)){
-			remove = 1;
-		}
-		
-		//If the flag is set, remove the register using the
-		//static method specified in the project document (i.e.
-		//put a '*' in the first byte of the register)
-		if(remove){
-			//Go to the beginning of the register
-			fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
+			char *bufPtr = buf;
+			char *field = strsep(&bufPtr,"|");
+			reg->cidadeOrigem = field;
+			
+			//If the condition is matched, set the 'remove' flag
+			if(!strcmp(searchField,"cidadeOrigem") && !strcmp(reg->cidadeOrigem,value)){
+				remove = 1;
+			}
+			
+			field = strsep(&bufPtr,"|");
+			reg->cidadeDestino = field;
+			
+			//If the condition is matched, set the 'remove' flag
+			if(!strcmp(searchField,"cidadeDestino") && !strcmp(reg->cidadeDestino,value)){
+				remove = 1;
+			}
+			
+			field = strsep(&bufPtr,"|");
+			reg->tempoViagem = field;
+			
+			//If the condition is matched, set the 'remove' flag
+			if(!strcmp(searchField,"tempoViagem") && !strcmp(reg->tempoViagem,value)){
+				remove = 1;
+			}
+			
+			//If the flag is set, remove the register using the
+			//static method specified in the project document (i.e.
+			//put a '*' in the first byte of the register)
+			if(remove){
+				//Go to the beginning of the register
+				fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
 
-			//Write the '*' character
-			fwrite("*",sizeof(char),1,fp);
-		
-			//Go to the next register
-			fseek(fp,DREGSIZE-1,SEEK_CUR);
+				//Write the '*' character
+				fwrite("*",sizeof(char),1,fp);
+			
+				//Go to the next register
+				fseek(fp,DREGSIZE-1,SEEK_CUR);
 
-			//Clear the flag to use it again
-			remove = 0;
+				//Increment the number of removed
+				++removed;
+
+				//Clear the flag to use it again
+				remove = 0;
+			} else {
+				if(check_for_city(reg->cidadeOrigem,cities)){
+					++len;
+				}
+				if(check_for_city(reg->cidadeDestino,cities)){
+					++len;
+				}
+			}
+			++rrn;
+		} else {
+			++rrn;
+			fseek(fp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
 		}
-		++rrn;
 	}
-  
+	//Go back to the beginning of the file
+	fseek(fp,0,SEEK_SET);
+
+	//And write the new values of the header register
+	hReg->status = '1';
+	fwrite(&(hReg->status),STATUSSIZE,1,fp);
+	hReg->numeroVertices = len;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fp);
+	hReg->numeroArestas = hReg->numeroArestas - removed;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fp);
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 	fclose(fp);
+
+	return 1;
 }
 
 //Insert a new register in the .bin file
-void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int distancia, char *cidadeOrigem, char *cidadeDestino, char *tempoViagem){
+int insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int distancia, char *cidadeOrigem, char *cidadeDestino, char *tempoViagem){
 	FILE *fp = fopen(fName, "rb+");
  	if (!fp) {
     printf("Falha no carregamento do arquivo.\n");
-    return;
+    return 0;
   }
 
 	//Variable to store the RRN of the current register
@@ -576,21 +647,20 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 	dataReg *aux = (dataReg*)malloc(DREGSIZE);
 	
 	//Create a header register to update its values in the .bin file
+	//and write a status '0' to symbolize that a writing will be done
 	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
-
-	//Create a buffer to store the variable size part of the register
-	char buf[VARSIZE];
-	
-	//Variable to count the number of registers in the file
-	int row_count = 0;
-
-	//Write a status '0' to symbolize that a writing will be done
 	hReg->status = '0';
 	fwrite(&(hReg->status),STATUSSIZE,1,fp);
 	fread(&(hReg->numeroVertices),VERTSIZE,1,fp);
 	fread(&(hReg->numeroArestas),EDGESIZE,1,fp);
 	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
+
+	//Create a buffer to store the variable size part of the register
+	char buf[VARSIZE];
+	
+	//Variable to count the number of registers in the file
+	int row_count = 0;
 	//Pass the new values to the created register
   strcpy(dReg->estadoOrigem,estadoOrigem);
 	strcpy(dReg->estadoDestino,estadoDestino);
@@ -678,15 +748,17 @@ void insert_register(char *fName, char estadoOrigem[], char estadoDestino[], int
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
 	fclose(fp);
+
+	return 1;
 }
 
 //Update a field of a register with a given RRN
-void update_register(char *searchField, char *newValue, char *fName, int rrn){
+int update_register(char *searchField, char *newValue, char *fName, int rrn){
 	FILE *fp = fopen(fName, "rb+");
 
 	if (!fp) {
 		printf("Falha no processamento do arquivo.\n");
-		return;
+		return 0;
 	}
 	
 	//Create a register that will substitute the old one
@@ -695,116 +767,187 @@ void update_register(char *searchField, char *newValue, char *fName, int rrn){
 	//Create a buffer to store the variable size part of the register
 	char buf[VARSIZE];
 
+	//Create a list to store the cities that are in the file
+	//and the variable 'len' stores the length of the list
+	int len = 0;
+	cityList *cities = (cityList *)malloc(sizeof(cityList));
+	*cities = NULL;
+
+	//Create a header register to update its values in the .bin file
+	//and write a status '0' to symbolize that a writing will be done
+	headerReg *hReg = (headerReg *)malloc(HREGSIZE);
+	hReg->status = '0';
+	fwrite(&(hReg->status),STATUSSIZE,1,fp);
+	fread(&(hReg->numeroVertices),VERTSIZE,1,fp);
+	fread(&(hReg->numeroArestas),EDGESIZE,1,fp);
+	fread(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
+
+	//Variable to count the number of registers in the file
+	int row_count = 0;
+
+	//Flag to verify if updated
+	int updated = 0;
+
 	//Go to the register
-	fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
-	
-	//If the field to be updated is "estadoOrigem"
-	if(!strcmp(searchField,"estadoOrigem")){
-		//Simply write the new value
-		strcpy(reg->estadoOrigem,newValue);
-		fwrite(reg->estadoOrigem,ORIGINSIZE,1,fp);
-  	fclose(fp);
-		return;
-	}
-	
-	//If the field to be updated is "estadoDestino"
-	if(!strcmp(searchField,"estadoDestino")){
-		//Go to the first byte of this field and write the new value
-		fseek(fp,ORIGINSIZE,SEEK_CUR);
-		strcpy(reg->estadoDestino,newValue);
-		fwrite(reg->estadoDestino,DESTSIZE,1,fp);
-		fclose(fp);
-		return;
-	}
+	fseek(fp,rrn*DREGSIZE,SEEK_SET);
 
-	//If the field to be updated is "distancia"
-	if(!strcmp(searchField,"distancia")){
-		//Go to the first byte of this field and write the new value
-		fseek(fp,ORIGINSIZE+DESTSIZE,SEEK_CUR);
-		reg->distancia = atoi(newValue);
-		fwrite(&(reg->distancia),DISTANCESIZE,1,fp);
-		fclose(fp);
-		return;
-	}
-	
-	//If the field isn't none of these, go to the first byte
-	//of the variable size part of the register
-	fseek(fp,ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_CUR);
-	
-	//Read this part
-	fread(buf,VARSIZE,1,fp);
-
-	//Get the fields
-	char *bufPtr = buf;
-	char *field = strsep(&bufPtr,"|");
-	reg->cidadeOrigem = field;
-	
-	field = strsep(&bufPtr,"|");
-	reg->cidadeDestino = field;
+	//Check if the RRN isn't beyond EOF
+	if(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)){
+		//Get back to the beginning of the register
+		fseek(fp,HREGSIZE+rrn*DREGSIZE,SEEK_SET);
 		
-	field = strsep(&bufPtr,"|");
-	reg->tempoViagem = field;
-	
-	//Calculate the size of the register before the insertion of the new value
-	int oldPartRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
+		//If the field to be updated is "estadoOrigem"
+		if(!strcmp(searchField,"estadoOrigem")){
+			//Simply write the new value
+			strcpy(reg->estadoOrigem,newValue);
+			fwrite(reg->estadoOrigem,ORIGINSIZE,1,fp);
+			updated = 1;
+		}
+		
+		//If the field to be updated is "estadoDestino"
+		if(!strcmp(searchField,"estadoDestino")){
+			//Go to the first byte of this field and write the new value
+			fseek(fp,ORIGINSIZE,SEEK_CUR);
+			strcpy(reg->estadoDestino,newValue);
+			fwrite(reg->estadoDestino,DESTSIZE,1,fp);
+			updated = 1;
+		}
 
-	//Go back to the first byte of the variable size part
-	fseek(fp,HREGSIZE+rrn*DREGSIZE+ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_SET);
-	
-	//If the field to be updated is "estadoOrigem"
-	if(!strcmp(searchField,"cidadeOrigem")){
-		//Write the new value and rewrite the next three fields with the delimiters
-		reg->cidadeOrigem = newValue;
-		fwrite(reg->cidadeOrigem,sizeof(char),strlen(reg->cidadeOrigem),fp);
-		fwrite("|",sizeof(char),1,fp);
-		fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
-		fwrite("|",sizeof(char),1,fp);
-		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
-		fwrite("|",sizeof(char),1,fp);
+		//If the field to be updated is "distancia"
+		if(!strcmp(searchField,"distancia")){
+			//Go to the first byte of this field and write the new value
+			fseek(fp,ORIGINSIZE+DESTSIZE,SEEK_CUR);
+			reg->distancia = atoi(newValue);
+			fwrite(&(reg->distancia),DISTANCESIZE,1,fp);
+			updated = 1;
+		}
+		
+		if(!updated){
+			//If the field isn't none of these, go to the first byte
+			//of the variable size part of the register
+			fseek(fp,ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_CUR);
+			
+			//Read this part
+			fread(buf,VARSIZE,1,fp);
+
+			//Get the fields
+			char *bufPtr = buf;
+			char *field = strsep(&bufPtr,"|");
+			reg->cidadeOrigem = field;
+			
+			field = strsep(&bufPtr,"|");
+			reg->cidadeDestino = field;
+				
+			field = strsep(&bufPtr,"|");
+			reg->tempoViagem = field;
+
+			//Go back to the first byte of the variable size part
+			fseek(fp,HREGSIZE+rrn*DREGSIZE+ORIGINSIZE+DESTSIZE+DISTANCESIZE,SEEK_SET);
+			
+			//If the field to be updated is "estadoOrigem"
+			if(!strcmp(searchField,"cidadeOrigem")){
+				//Write the new value and rewrite the next three fields with the delimiters
+				reg->cidadeOrigem = newValue;
+				fwrite(reg->cidadeOrigem,sizeof(char),strlen(reg->cidadeOrigem),fp);
+				fwrite("|",sizeof(char),1,fp);
+				fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
+				fwrite("|",sizeof(char),1,fp);
+				fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+				fwrite("|",sizeof(char),1,fp);
+				updated = 1;
+			}
+			
+			//If the field to be updated is "estadoOrigem"
+			if(!strcmp(searchField,"cidadeDestino")){
+				//Go to the first byte of the next field, write the new value
+				//and rewrite the next two fields, all this with the delimiters
+				fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char),SEEK_CUR);
+				reg->cidadeDestino = newValue;
+				fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
+				fwrite("|",sizeof(char),1,fp);
+				fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+				fwrite("|",sizeof(char),1,fp);
+				updated = 1;
+			}
+
+			//If the field to be updated is "estadoOrigem"
+			if(!strcmp(searchField,"tempoViagem")){
+				//Go to the first byte of the lat field and
+				//write the new value with the delimiter
+				fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char)+(sizeof(char)*strlen(reg->cidadeDestino))+sizeof(char),SEEK_CUR);
+				reg->tempoViagem = newValue;
+				fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
+				fwrite("|",sizeof(char),1,fp);
+				updated = 1;
+			}		
+		}
 	}
-	
-	//If the field to be updated is "estadoOrigem"
-	if(!strcmp(searchField,"cidadeDestino")){
-		//Go to the first byte of the next field, write the new value
-		//and rewrite the next two fields, all this with the delimiters
-		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char),SEEK_CUR);
-		reg->cidadeDestino = newValue;
-		fwrite(reg->cidadeDestino,sizeof(char),strlen(reg->cidadeDestino),fp);
-		fwrite("|",sizeof(char),1,fp);
-		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
-		fwrite("|",sizeof(char),1,fp);
+
+	//Go to the first register
+	fseek(fp,HREGSIZE,SEEK_SET);
+
+	//While there are registers to be read, continue
+	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)) {
+		//If the register hasn't been removed, continue
+		//Else, go to the next register with fseek
+		if(reg->estadoOrigem[0] != '*'){
+			fread(reg->estadoDestino,DESTSIZE,1,fp);
+			fread(&(reg->distancia),DISTANCESIZE,1,fp);
+			
+			fread(buf,VARSIZE,1,fp);
+
+			char *bufPtr = buf;
+			char *field = strsep(&bufPtr,"|");
+			reg->cidadeOrigem = field;
+			
+			//If the city isn't in the list, insert it
+			//and increment its length
+			if(check_for_city(reg->cidadeOrigem,cities)){
+				++len;
+			}
+				
+			field = strsep(&bufPtr,"|");
+			reg->cidadeDestino = field;
+		
+			//If the city isn't in the list, insert it
+			//and increment its length
+			if(check_for_city(reg->cidadeDestino,cities)){
+				++len;
+			}
+
+			field = strsep(&bufPtr,"|");
+			reg->tempoViagem = field;
+
+			++row_count;
+		} else {
+			fseek(fp,DREGSIZE-ORIGINSIZE,SEEK_CUR);
+		}
 	}
-	
-	//If the field to be updated is "estadoOrigem"
-	if(!strcmp(searchField,"tempoViagem")){
-		//Go to the first byte of the lat field and
-		//write the new value with the delimiter
-		fseek(fp,(sizeof(char)*strlen(reg->cidadeOrigem))+sizeof(char)+(sizeof(char)*strlen(reg->cidadeDestino))+sizeof(char),SEEK_CUR);
-		reg->tempoViagem = newValue;
-		fwrite(reg->tempoViagem,sizeof(char),strlen(reg->tempoViagem),fp);
-		fwrite("|",sizeof(char),1,fp);
-	}
-	
-	//Calculate the new size occupied by th register. If this new value is
-	//less than the old value, it means that there are some bytes without
-	//the garbage character '#', so overwrite those bytes
-	int newPartRegSize = ORIGINSIZE + DESTSIZE + DISTANCESIZE + sizeof(char)*strlen(reg->cidadeOrigem) + sizeof(char)*strlen(reg->cidadeDestino) + sizeof(char)*strlen(reg->tempoViagem) + 3 * sizeof(char);
-	while(newPartRegSize < oldPartRegSize && newPartRegSize < DREGSIZE) {
-		fwrite("#",sizeof(char),1,fp);
-		newPartRegSize += sizeof(char);
-	}
+
+	//Go to the beginning of the file
+	fseek(fp,0,SEEK_SET);
+
+	//Write the new values of the header register
+	hReg->status = '1';
+	fwrite(&(hReg->status),STATUSSIZE,1,fp);
+	hReg->numeroVertices = len;
+	fwrite(&(hReg->numeroVertices),VERTSIZE,1,fp);
+	hReg->numeroArestas = row_count;
+	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fp);
+	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fp);
 
 	fclose(fp);
+	return 1;	
 }
 
 //Compress an input file with statically removed files
 //into a new file
-void compress_bin(char *fInp, char *fOut){
+int compress_bin(char *fInp, char *fOut){
 	FILE *fpInp = fopen(fInp, "rb");
 	FILE *fpOut = fopen(fOut, "wb");
 	if (!fpInp || !fpOut) {
-		printf("Falha no processamento do arquivo.\n");
-		return;
+		printf("Falha no carregamento do arquivo.\n");
+		return 0;
 	}
 
 	//Allocate memory for the header register and set
@@ -848,10 +991,15 @@ void compress_bin(char *fInp, char *fOut){
 
 	//While there are registers to be read, continue
 	while(fread(reg->estadoOrigem,ORIGINSIZE,1,fpInp)) {
-		//If the register hasn't been deleted,
+		//If there's a '\n' character in the beginning of the
+		//register, the file is not well built
+		//Else, if the register hasn't been deleted,
 		//copy it to the new file
 		//Else, go to the next one
-		if(reg->estadoOrigem[0] != '*'){
+		if(reg->estadoOrigem[0] == '\n'){
+			printf("Falha no carregamento do arquivo.\n");
+			return 0;
+		} else if(reg->estadoOrigem[0] != '*'){
 			//Read the values from the input file
 			fread(reg->estadoDestino,DESTSIZE,1,fpInp);
 			fread(&(reg->distancia),DISTANCESIZE,1,fpInp);
@@ -915,25 +1063,17 @@ void compress_bin(char *fInp, char *fOut){
 	hReg->numeroArestas = row_count;
 	fwrite(&(hReg->numeroArestas),EDGESIZE,1,fpOut);
 
-	//Get the current dateand put it in the "dd/mm/yyyy" format
-	time_t rawtime;
-	struct tm * timeinfo;
-	char date[11];
-
-	time (&rawtime);
-	timeinfo = localtime (&rawtime);
-	strftime (date,11,"%d/%m/%Y",timeinfo);
-
 	//Write the new value for the date
-	strcpy(hReg->dataUltimaCompactacao,date);
+	strcpy(hReg->dataUltimaCompactacao,LASTCOMPDATE);
 	fwrite(hReg->dataUltimaCompactacao,sizeof(char),LASTCOMPSIZE,fpOut);
 
 	fclose(fpOut);
 	fclose(fpInp);
+
+	return 1;
 }
 
 int main(){
-
 	char arqInp[50];
 	char arqOut[50];
 	char field[15];
@@ -946,21 +1086,26 @@ int main(){
 	char *cidadeOrigem = (char *)malloc(sizeof(char *));
 	char *cidadeDestino = (char *)malloc(sizeof(char *));
 	char *tempoViagem = (char *)malloc(sizeof(char *));
+	int flag = -1;
 	int option = -1;
 	scanf("%d ",&option);
 
 	switch (option)	{
+		//If it's the conversion from .csv to .bin
 		case 1:
 			scanf("%s %s",arqInp,arqOut);
-			csv_to_bin(arqInp,arqOut);
-			binarioNaTela1(arqOut);
+			if(csv_to_bin(arqInp,arqOut)){
+				binarioNaTela1(arqOut);
+			}
 			break;
 		
+		//If it's the reading of a .bin file
 		case 2:
 			scanf("%s",arqOut);
 			read_bin(arqOut);
 			break;
 
+		//If it's the search of registers by a field
 		case 3:
 			scanf("%s %s ",arqOut,field);
 			if(!strcmp(field,"distancia")){
@@ -971,27 +1116,32 @@ int main(){
 				search_by_field(arqOut,field,value);
 			}
 			break;
-
+		
+		//If it's the search of a register by its RRN
 		case 4:
 			scanf("%s %d",arqOut,&rrn);
 			search_by_rrn(arqOut,rrn);
 			break;
 
+		//If it's the deletion of registers by a field and a value
 		case 5:
 			scanf("%s %d",arqOut,&n);
 			for(int i = 0; i < n; ++i){
 				scanf("%s ",field);
 				if(!strcmp(field,"distancia")){
 					scanf("%s",value);
-					remove_register(arqOut,field,value);
+					flag = remove_register(arqOut,field,value);
 				} else {
 					scan_quote_string(value);
-					remove_register(arqOut,field,value);
+					flag = remove_register(arqOut,field,value);
 				}
 			}
-			read_bin(arqOut);
+			if(flag){
+				binarioNaTela1(arqOut);
+			}
 			break;
 
+		//If it's the insertion of registers
 		case 6:
 			scanf("%s %d",arqOut,&n);
 			for(int i = 0; i < n; ++i){
@@ -999,35 +1149,40 @@ int main(){
 				scan_quote_string(cidadeOrigem);
 				scan_quote_string(cidadeDestino);
 				scan_quote_string(tempoViagem);
-				insert_register(arqOut,estadoOrigem,estadoDestino,distancia,cidadeOrigem,cidadeDestino,tempoViagem);
+				flag = insert_register(arqOut,estadoOrigem,estadoDestino,distancia,cidadeOrigem,cidadeDestino,tempoViagem);
 			}
-			read_bin(arqOut);
-
+			if(flag){
+				binarioNaTela1(arqOut);
+			}
 			break;
 
+		//If it's the updating of registers
 		case 7:
 			scanf("%s %d",arqOut,&n);
 			for(int i = 0; i < n; ++i){
 				scanf("%d %s ",&rrn,field);
 				if(!strcmp(field,"distancia")){
 					scanf("%s",value);
-					update_register(field,value,arqOut,rrn);
+					flag = update_register(field,value,arqOut,rrn);
 				} else {
 					scan_quote_string(value);
-					update_register(field,value,arqOut,rrn);
+					flag = update_register(field,value,arqOut,rrn);
 				}
 			}
-			read_bin(arqOut);
+			if(flag){
+				binarioNaTela1(arqOut);
+			}
 			break;
 
+		//If it's the compression of the file
 		case 8:
 			scanf("%s %s",arqInp,arqOut);
-			compress_bin(arqInp,arqOut);
-			binarioNaTela1(arqOut);
+			if(compress_bin(arqInp,arqOut)){
+				binarioNaTela1(arqOut);
+			}
 			break;
 
 		default:
-			printf("Opção não encontrada.\n");
 			break;
 	}
   return 0;
