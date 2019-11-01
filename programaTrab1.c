@@ -789,7 +789,7 @@ int update_register(char *searchField, char *newValue, char *fName, int rrn){
 	int updated = 0;
 
 	//Go to the register
-	fseek(fp,rrn*DREGSIZE,SEEK_SET);
+	fseek(fp,rrn*DREGSIZE,SEEK_CUR);
 
 	//Check if the RRN isn't beyond EOF
 	if(fread(reg->estadoOrigem,ORIGINSIZE,1,fp)){
